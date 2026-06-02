@@ -1,0 +1,72 @@
+name: 01- 🔐 ورود به تلگرام
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone:
+        description: '📞 شماره با کد کشور (+989123456789)'
+        required: true
+        type: string
+      code:
+        description: '🔢 کد (خالی=دریافت کد، "resend"=پیامک/تماس، یا کد را وارد کنید)'
+        required: false
+        type: string
+      password:
+        description: '🔐 رمز دو مرحله‌ای (در صورت فعال بودن)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 📦 بازیابی کش
+        uses: actions/cache/restore@v4
+        with:
+          path: phone_hash.json
+          key: phone-hash-${{ github.event.inputs.phone }}-
+          restore-keys: |
+            phone-hash-${{ github.event.inputs.phone }}-
+
+      - name: 🐍 نصب پایتون
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 نصب وابستگی‌ها
+        run: pip install telethon
+
+      - name: 🔍 نمایش فایل‌ها قبل از ورود
+        run: |
+          echo "📂 فایل‌ها قبل از ورود:"
+          ls -la
+          cat phone_hash.json 2>/dev/null || echo "❌ فایل هش هنوز وجود ندارد"
+
+      - name: 🔐 ورود
+        run: python login.py "${{ github.event.inputs.phone }}" "${{ github.event.inputs.code }}" "${{ github.event.inputs.password }}"
+
+      - name: 🔍 نمایش فایل‌ها بعد از ورود
+        run: |
+          echo "📂 فایل‌ها بعد از ورود:"
+          ls -la
+          cat phone_hash.json 2>/dev/null || echo "❌ فایل هش وجود ندارد"
+
+      - name: 💾 ذخیره کش
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: phone_hash.json
+          key: phone-hash-${{ github.event.inputs.phone }}-${{ github.run_id }}
+
+      - name: 💾 ذخیره سشن
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f im.im 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "🔐 بروزرسانی سشن"
+          git push || echo "❌ چیزی برای ارسال نیست"
