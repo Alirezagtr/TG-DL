@@ -1,0 +1,87 @@
+name: 02- 📥 دانلود از تلگرام
+
+on:
+  workflow_dispatch:
+    inputs:
+      telegram_url:
+        description: '🔗 لینک تلگرام (مثال: https://t.me/channel/123)'
+        required: true
+        type: string
+      persian_title:
+        description: '📝 عنوان فارسی (برای نام پوشه)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🐍 نصب پایتون
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 نصب وابستگی‌ها
+        run: |
+          pip install telethon
+          sudo apt-get update
+          sudo apt-get install -y rar
+
+      - name: 📥 دانلود فایل
+        run: python download.py "${{ github.event.inputs.telegram_url }}" "${{ github.event.inputs.persian_title }}"
+
+      - name: 📦 تقسیم فایل‌های بزرگ به RAR
+        run: |
+          if [ -d "downloads" ]; then
+            cd downloads
+            # استفاده از find برای پیدا کردن امن پوشه‌ها و فایل‌هایی که اسپیس دارند
+            find . -type f ! -name "README.md" | while read -r file; do
+              size=$(stat -c%s "$file")
+              # اگر فایل بزرگتر از 90 مگابایت بود (94371840 بایت)
+              if [ $size -gt 94371840 ]; then
+                echo "📦 در حال تقسیم فایل: $file ($(($size/1024/1024))MB)..."
+                
+                # استخراج مسیر پوشه و نام فایل
+                dir_name=$(dirname "$file")
+                base_name=$(basename "$file")
+                filename_no_ext="${base_name%.*}"
+                ext="${base_name##*.}"
+                
+                cd "$dir_name"
+                
+                if [ "$ext" = "rar" ] || [ "$ext" = "zip" ]; then
+                  # اگر فایل از قبل آرشیو بود، فقط آن را بدون فشرده‌سازی مجدد پارت پارت کن
+                  rar a -v90m -m0 -ep "${filename_no_ext}_part.rar" "$base_name"
+                else
+                  # برای بقیه فایل‌ها فشرده‌سازی و پارت‌بندی انجام بده
+                  rar a -v90m -ep "${filename_no_ext}.rar" "$base_name"
+                fi
+                
+                # حذف فایل اصلی بزرگ
+                rm "$base_name"
+                
+                # بازگشت به پوشه اصلی دانلودها برای فایل بعدی
+                cd - > /dev/null
+              fi
+            done
+            echo "✅ لیست نهایی فایل‌ها:"
+            ls -laR
+          else
+            echo "❌ پوشه downloads یافت نشد."
+          fi
+
+      - name: 📝 بروزرسانی README پوشه‌ها
+        run: python update_folder_readme.py || echo "⚠️ اسکریپت آپدیت ریدمی اجرا نشد یا وجود ندارد"
+
+      - name: 💾 ذخیره فایل‌های دانلود شده
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add downloads/
+          git commit -m "📥 دانلود شد: ${{ github.event.inputs.persian_title || github.event.inputs.telegram_url }}" || echo "❌ تغییری وجود ندارد"
+          git push
